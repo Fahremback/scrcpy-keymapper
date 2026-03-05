@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 import ctypes
 from ctypes import wintypes
 import os
+import sys
 import time
 import threading
 import subprocess
