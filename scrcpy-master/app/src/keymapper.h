@@ -2,6 +2,7 @@
 #define SC_KEYMAPPER_H
 
 #include "common.h"
+#include "control_msg.h"
 #include "coords.h"
 #include <SDL2/SDL.h>
 #include <stdbool.h>
@@ -16,6 +17,9 @@
 #define KM_TYPE_DPAD 3   // Virtual joystick (WASD)
 #define KM_TYPE_SCROLL 4 // Mouse wheel to swipe
 #define KM_TYPE_MACRO 5  // Multi-tap sequence
+
+// Pointer ID for FPS aim finger
+#define SC_POINTER_ID_AIM_FINGER (SC_POINTER_ID_GENERIC_FINGER + 200)
 
 struct km_macro_step {
   float x_pct;
@@ -44,43 +48,42 @@ struct km_state {
   bool edit_mode;
   bool show_overlay;
   bool fps_mode;
-  float opacity; // 0.0 - 1.0
-  int dragging;  // index of binding being dragged, -1 = none
-  int selected;  // index of selected binding, -1 = none
+  bool aim_finger_down; // whether the aim touch is currently pressed
+  float opacity;        // 0.0 - 1.0
+  int dragging;         // index of binding being dragged, -1 = none
+  int selected;         // index of selected binding, -1 = none
 };
 
 // Initialize and load keymap.cfg
 void km_init(void);
 
-// Render overlay on top of the game (call between RenderCopy and RenderPresent)
+// Render overlay on top of the game
 void km_render_overlay(SDL_Renderer *renderer, const SDL_Rect *content_rect,
                        struct sc_size frame_size);
 
-// Check if a key event should be handled by keymapper
-// Returns the binding if found, NULL otherwise
+// Find bindings
 struct km_binding *km_find_key(SDL_Keycode kc);
 struct km_binding *km_find_mouse_binding(uint8_t button);
+struct km_binding *km_find_aim(void);
 
 // Toggle edit mode (F12)
 void km_toggle_edit(void);
 
-// Toggle overlay visibility F11
+// Toggle overlay visibility (F11)
 void km_toggle_overlay(void);
 
-// Toggle FPS lock F10
+// Toggle FPS lock (F10)
 void km_toggle_fps(void);
 
 // Adjust opacity with PgUp/PgDn
 void km_adjust_opacity(float delta);
 
-// Handle mouse event in edit mode. Returns true if event was consumed.
+// Handle mouse event in edit mode
 bool km_handle_edit_mouse(const SDL_Event *event, const SDL_Rect *content_rect,
                           struct sc_size frame_size);
 
-// Save current config to keymap.cfg
+// Save/reload config
 void km_save_config(void);
-
-// Reload config from disk
 void km_reload_config(void);
 
 // Get state

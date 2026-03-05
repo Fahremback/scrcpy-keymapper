@@ -539,6 +539,14 @@ struct km_binding *km_find_mouse_binding(uint8_t button) {
   return NULL;
 }
 
+struct km_binding *km_find_aim(void) {
+  for (int i = 0; i < state.count; i++) {
+    if (state.bindings[i].type == KM_TYPE_AIM)
+      return &state.bindings[i];
+  }
+  return NULL;
+}
+
 // =====================================================
 // Toggle functions
 // =====================================================
@@ -562,9 +570,11 @@ void km_toggle_fps(void) {
   if (state.fps_mode) {
     LOGI("Keymapper: FPS Mode Enabled");
     SDL_SetRelativeMouseMode(SDL_TRUE);
+    state.aim_finger_down = false;
   } else {
     LOGI("Keymapper: FPS Mode Disabled");
     SDL_SetRelativeMouseMode(SDL_FALSE);
+    state.aim_finger_down = false;
   }
 }
 

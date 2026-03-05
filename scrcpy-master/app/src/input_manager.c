@@ -688,6 +688,65 @@ sc_input_manager_process_mouse_motion(struct sc_input_manager *im,
     return;
   }
 
+  // KEYMAPPER FPS AIM: convert relative mouse motion to touch swipes
+  if (kms_m->fps_mode && im->controller) {
+    struct km_binding *aim = km_find_aim();
+    if (aim) {
+      struct sc_size fs = im->screen->frame_size;
+
+      // Sensitivity: convert mouse pixels to fraction of screen
+      float sensitivity = 0.002f;
+      float dx = event->xrel * sensitivity;
+      float dy = event->yrel * sensitivity;
+
+      // Calculate touch point around aim anchor
+      float tx = aim->x_pct + dx;
+      float ty = aim->y_pct + dy;
+
+      // Clamp
+      if (tx < 0.02f)
+        tx = 0.02f;
+      if (tx > 0.98f)
+        tx = 0.98f;
+      if (ty < 0.02f)
+        ty = 0.02f;
+      if (ty > 0.98f)
+        ty = 0.98f;
+
+      struct sc_point touch_pt;
+      touch_pt.x = (int32_t)(fs.width * tx);
+      touch_pt.y = (int32_t)(fs.height * ty);
+
+      struct sc_control_msg msg;
+      msg.type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT;
+      msg.inject_touch_event.position.screen_size = fs;
+      msg.inject_touch_event.position.point = touch_pt;
+      msg.inject_touch_event.pointer_id = SC_POINTER_ID_AIM_FINGER;
+      msg.inject_touch_event.action_button = 0;
+      msg.inject_touch_event.buttons = 0;
+
+      if (!kms_m->aim_finger_down) {
+        // First motion: put finger down
+        msg.inject_touch_event.action = AMOTION_EVENT_ACTION_DOWN;
+        msg.inject_touch_event.pressure = 1.0f;
+        sc_controller_push_msg(im->controller, &msg);
+        kms_m->aim_finger_down = true;
+      }
+
+      // Send move
+      msg.inject_touch_event.action = AMOTION_EVENT_ACTION_MOVE;
+      msg.inject_touch_event.pressure = 1.0f;
+      msg.inject_touch_event.position.point = touch_pt;
+      sc_controller_push_msg(im->controller, &msg);
+
+      // Reset anchor so next motion is relative from current pos
+      // This prevents the touch from drifting — each motion step is a small
+      // swipe then we "re-anchor" by lifting and putting down on next motion
+      // Actually, we keep the finger down for smooth continuous aiming
+      return;
+    }
+  }
+
   struct sc_mouse_motion_event evt = {
       .position = sc_input_manager_get_position(im, event->x, event->y),
       .pointer_id =
