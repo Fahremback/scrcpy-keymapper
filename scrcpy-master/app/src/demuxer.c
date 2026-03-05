@@ -168,7 +168,21 @@ static int run_demuxer(void *data) {
     goto end;
   }
 
-  const AVCodec *codec = avcodec_find_decoder(codec_id);
+  const AVCodec *codec = NULL;
+
+  // EXTREME LOW LATENCY: Force Nvidia GPU hardware decoding if available
+  if (codec_id == AV_CODEC_ID_HEVC) {
+    codec = avcodec_find_decoder_by_name("hevc_cuvid");
+  } else if (codec_id == AV_CODEC_ID_H264) {
+    codec = avcodec_find_decoder_by_name("h264_cuvid");
+  }
+
+  if (codec) {
+    LOGI("GPU Hardware decoder NVDEC/CUVID matched based on codec ID!");
+  } else {
+    LOGI("GPU Hardware decoder not forced, using FFmpeg default CPU decoder.");
+    codec = avcodec_find_decoder(codec_id);
+  }
   if (!codec) {
     LOGE("Demuxer '%s': stream disabled due to missing decoder", demuxer->name);
     sc_packet_source_sinks_disable(&demuxer->packet_source);
