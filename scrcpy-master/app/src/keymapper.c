@@ -487,14 +487,14 @@ void km_save_config(void) {
       break;
     }
     case KM_TYPE_AIM:
-      fprintf(f, "AIM %s %.3f %.3f\n", lname, b->x_pct, b->y_pct);
+      fprintf(f, "AIM aim %.3f %.3f\n", b->x_pct, b->y_pct);
       break;
     case KM_TYPE_DPAD:
-      fprintf(f, "DPAD %s %.3f %.3f %.3f\n", lname, b->x_pct, b->y_pct,
+      fprintf(f, "DPAD wasd %.3f %.3f %.3f\n", b->x_pct, b->y_pct,
               b->dpad_radius);
       break;
     case KM_TYPE_SCROLL:
-      fprintf(f, "SCROLL %s %.3f %.3f\n", lname, b->x_pct, b->y_pct);
+      fprintf(f, "SCROLL scroll %.3f %.3f\n", b->x_pct, b->y_pct);
       break;
     case KM_TYPE_MACRO: {
       fprintf(f, "MACRO %s %.3f %.3f ", lname, b->x_pct, b->y_pct);
