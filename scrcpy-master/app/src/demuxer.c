@@ -4,6 +4,7 @@
 #include <inttypes.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/hwcontext.h>
 
 #include "packet_merger.h"
 #include "util/binary.h"
@@ -180,6 +181,36 @@ static int run_demuxer(void *data) {
     LOG_OOM();
     goto end;
   }
+
+  // == START EXTREME LOW LATENCY (HARDWARE) ==
+  // Attempt to initialize D3D11VA (or DXVA2) hardware decoding device.
+  // This pushes H265 decoding from CPU to GPU.
+  if (codec->type == AVMEDIA_TYPE_VIDEO) {
+    AVBufferRef *hw_device_ctx = NULL;
+    // Try CUDA directly
+    int err = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_CUDA,
+                                     NULL, NULL, 0);
+    if (err < 0) {
+      // Fallback to D3D11VA (Windows nativo para Nvidia NVDEC)
+      err = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_D3D11VA,
+                                   NULL, NULL, 0);
+    }
+    if (err < 0) {
+      // DXVA2 fallback
+      err = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_DXVA2, NULL,
+                                   NULL, 0);
+    }
+
+    if (err == 0 && hw_device_ctx) {
+      codec_ctx->hw_device_ctx = hw_device_ctx; // Pass ownership to avcodec
+      LOGI("Scrcpy Low-Latency: Hardware Decoding Context initialized "
+           "(VRAM->RAM rendering bounding).");
+    } else {
+      LOGW("Hardware decoder context creation failed. Falling back to CPU "
+           "decoding.");
+    }
+  }
+  // == END HARDWARE ==
 
   codec_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
 
