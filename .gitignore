@@ -1,0 +1,57 @@
+# Binaries and DLLs
+*.exe
+*.dll
+*.so
+*.dylib
+*.server
+
+# Build artifacts
+build-win64/
+build/
+builddir/
+subprojects/
+
+# Config and runtime files
+keymap.cfg
+keymap.cmd
+keymap.json
+keymap_v*.json
+launcher_config.json
+
+# Installers and large files
+msys2-installer.exe
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Gemini/Agent
+.gemini/
+.agents/
+
+# Old/unused scripts
+keymap_editor.py
+open_a_terminal_here.bat
+scrcpy-console.bat
+scrcpy-noconsole.vbs
+Iniciar_Jogo_Otimizado.bat
+
+# Assets (keep icon.png)
+# icon.png is tracked
+
+# Scrcpy server binary
+scrcpy-server
