@@ -223,7 +223,7 @@ class LauncherApp(tk.Tk):
         self._cfg_combo(inner, "Resolução Máxima", "max_size", ["720", "1080", "1440", "1920", "2560"])
         self._cfg_combo(inner, "FPS Máximo", "max_fps", ["30", "60", "90", "120", "144", "240"])
         self._cfg_combo(inner, "Bitrate de Vídeo", "video_bit_rate", ["2M", "4M", "8M", "16M", "32M", "64M"])
-        self._cfg_combo(inner, "Codec de Vídeo", "video_codec", ["h264", "h265", "av1"])
+        self._cfg_combo(inner, "Codec de Vídeo", "video_codec", ["h265", "h264", "av1"])
         
         self._cfg_section(inner, "LATÊNCIA")
         self._cfg_combo(inner, "Buffer de Vídeo (ms)", "video_buffer", ["0", "10", "25", "50", "100", "200"])
@@ -484,10 +484,25 @@ class LauncherApp(tk.Tk):
         if c.get("max_size"): cmd += ["-m", str(c["max_size"])]
         if c.get("max_fps"): cmd += ["--max-fps", str(c["max_fps"])]
         if c.get("video_bit_rate"): cmd += ["-b", str(c["video_bit_rate"])]
-        if c.get("video_codec") and c["video_codec"] != "h264":
-            cmd += ["--video-codec", c["video_codec"]]
-        if c.get("video_buffer"): cmd += ["--video-buffer", str(c["video_buffer"])]
-        if not c.get("audio", True): cmd += ["--no-audio"]
+        
+        codec = c.get("video_codec", "h265")
+        if codec != "h264": # h264 is default in original scrcpy, but we prefer h265
+            cmd += ["--video-codec", codec]
+            
+        # EXTREME LOW LATENCY OPTIONS (Snapdragon Gen 2 optimized)
+        # Force low-delay hardware encoder profile (baseline/main equivalent)
+        if codec in ["h264", "h265"]:
+            cmd += ["--video-codec-options", "profile=1,level=4096"]
+            
+        vb = c.get("video_buffer", "0")
+        if vb != "0": cmd += ["--video-buffer", str(vb)]
+        
+        # Optimize audio buffer to 10ms instead of default 50ms for low latency
+        if not c.get("audio", True): 
+            cmd += ["--no-audio"]
+        else:
+            cmd += ["--audio-buffer", "10"]
+            
         if c.get("fullscreen"): cmd += ["--fullscreen"]
         if c.get("borderless"): cmd += ["--window-borderless"]
         if c.get("always_on_top"): cmd += ["--always-on-top"]
@@ -495,6 +510,9 @@ class LauncherApp(tk.Tk):
         if c.get("turn_screen_off"):
             cmd += ["--turn-screen-off", "--stay-awake"]
         cmd += ["-K"]
+        
+        # Print command for debugging
+        print("Executando:", " ".join(cmd))
         
         try:
             subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW,
