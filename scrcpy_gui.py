@@ -1,3 +1,7 @@
+"""
+Scrcpy GUI Controls — Sidebar panel for keymapper control.
+Dark premium theme matching the launcher aesthetic.
+"""
 import tkinter as tk
 from tkinter import ttk, messagebox
 import ctypes
@@ -14,6 +18,30 @@ kernel32 = ctypes.windll.kernel32
 
 KEYMAP_FILE = "keymap.cfg"
 
+# ── Colors (matching launcher) ──
+BG     = "#0d1117"
+BG2    = "#161b22"
+BG3    = "#21262d"
+BORDER = "#30363d"
+TEXT   = "#e6edf3"
+TEXT2  = "#8b949e"
+ACCENT = "#58a6ff"
+GREEN  = "#3fb950"
+RED    = "#f85149"
+YELLOW = "#d29922"
+PURPLE = "#bc8cff"
+
+# Type colors
+TYPE_COLORS = {
+    "KEY": ACCENT,
+    "MOUSE": PURPLE,
+    "AIM": "#f85149",
+    "DPAD": "#58a6ff",
+    "SCROLL": "#d29922",
+    "MACRO": "#bc8cff",
+}
+
+
 class ScrcpySidebar(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -26,68 +54,108 @@ class ScrcpySidebar(tk.Tk):
             except Exception as e:
                 print("Could not launch scrcpy:", e)
             
-        self.title("Scrcpy GUI Controls")
-        self.geometry("340x650")
-        self.configure(bg="#1E1E2E")
+        self.title("Scrcpy Controls")
+        self.geometry("320x620")
+        self.configure(bg=BG)
         self.attributes('-topmost', True)
-        # Removed overrideredirect so standard Windows resize/close works.
+        
+        # Dark theme
+        s = ttk.Style(self)
+        s.theme_use('clam')
+        s.configure("TNotebook", background=BG, borderwidth=0)
+        s.configure("TNotebook.Tab", background=BG3, foreground=TEXT2, padding=[10, 5],
+                   font=("Segoe UI", 9, "bold"))
+        s.map("TNotebook.Tab", background=[("selected", BG2)], foreground=[("selected", ACCENT)])
+        
+        s.configure("Action.TButton", background=ACCENT, foreground=BG,
+                   font=("Segoe UI", 9, "bold"), borderwidth=0, padding=6)
+        s.map("Action.TButton", background=[("active", "#388bfd")])
+        
+        s.configure("Green.TButton", background=GREEN, foreground=BG,
+                   font=("Segoe UI", 9, "bold"), borderwidth=0, padding=6)
+        s.map("Green.TButton", background=[("active", "#2ea043")])
+        
+        s.configure("Red.TButton", background=RED, foreground=BG,
+                   font=("Segoe UI", 9, "bold"), borderwidth=0, padding=4)
+        s.map("Red.TButton", background=[("active", "#da3633")])
+        
+        s.configure("Ghost.TButton", background=BG3, foreground=TEXT2,
+                   font=("Segoe UI", 9), borderwidth=0, padding=5)
+        s.map("Ghost.TButton", background=[("active", BORDER)])
+        
+        s.configure("Dark.TCombobox", fieldbackground=BG3, background=BG3, foreground=TEXT,
+                   arrowcolor=TEXT2, borderwidth=1, padding=3)
+        s.map("Dark.TCombobox", fieldbackground=[("readonly", BG3)], foreground=[("readonly", TEXT)],
+              selectbackground=[("readonly", BG3)], selectforeground=[("readonly", TEXT)])
+        
+        self.option_add('*TCombobox*Listbox.background', BG3)
+        self.option_add('*TCombobox*Listbox.foreground', TEXT)
+        self.option_add('*TCombobox*Listbox.selectBackground', ACCENT)
+        self.option_add('*TCombobox*Listbox.selectForeground', BG)
+        self.option_add('*TCombobox*Listbox.font', ("Segoe UI", 9))
 
         self.scrcpy_hwnd = None
         self.running = True
         
-        # Style
-        self.style = ttk.Style(self)
-        self.style.theme_use('clam')
-        self.style.configure("TButton", background="#89B4FA", foreground="#11111B", font=("Segoe UI", 10, "bold"), borderwidth=0)
-        self.style.map("TButton", background=[("active", "#B4BEFE")])
-        self.style.configure("Danger.TButton", background="#F38BA8", foreground="#11111B")
-        self.style.map("Danger.TButton", background=[("active", "#F9E2AF")])
+        # ── Header ──
+        hdr = tk.Frame(self, bg=BG)
+        hdr.pack(fill=tk.X, padx=12, pady=(10, 5))
+        tk.Label(hdr, text="CONTROLES", bg=BG, fg=TEXT, font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
 
-        self.btn_frame = tk.Frame(self, bg="#1E1E2E")
-        self.btn_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Actions
-        actions_frame = tk.Frame(self.btn_frame, bg="#1E1E2E")
-        actions_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Button(actions_frame, text="✏️ Modo Edição (F12)", command=self.toggle_edit).pack(fill=tk.X, pady=2)
-        ttk.Button(actions_frame, text="👁️ Mostrar/Ocultar (F11)", command=self.toggle_overlay).pack(fill=tk.X, pady=2)
-        ttk.Button(actions_frame, text="🎯 Modo FPS [Mouse Lock] (F10)", command=self.toggle_fps).pack(fill=tk.X, pady=2)
+        # ── Quick Actions ──
+        actions = tk.Frame(self, bg=BG)
+        actions.pack(fill=tk.X, padx=12, pady=5)
         
-        f = tk.Frame(actions_frame, bg="#1E1E2E")
-        f.pack(fill=tk.X, pady=2)
-        ttk.Button(f, text="Opacidade -", command=self.opac_down, width=12).pack(side=tk.LEFT, expand=True, padx=(0,2))
-        ttk.Button(f, text="Opacidade +", command=self.opac_up, width=12).pack(side=tk.RIGHT, expand=True, padx=(2,0))
-
-        # List Header
-        list_header = tk.Frame(self.btn_frame, bg="#1E1E2E")
-        list_header.pack(fill=tk.X, pady=(10, 5))
-        tk.Label(list_header, text="MAPEAMENTOS:", bg="#1E1E2E", fg="#CDD6F4", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
-        ttk.Button(list_header, text="➕ Novo", command=self.add_key, width=8).pack(side=tk.RIGHT, padx=5)
-
-        # Inner Scrollable Frame for List
-        self.canvas = tk.Canvas(self.btn_frame, bg="#181825", highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self.btn_frame, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = tk.Frame(self.canvas, bg="#181825")
+        # Row 1
+        r1 = tk.Frame(actions, bg=BG)
+        r1.pack(fill=tk.X, pady=2)
+        self._action_btn(r1, "✏️ Editar  F12", self.toggle_edit, ACCENT).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,3))
+        self._action_btn(r1, "👁 Overlay  F11", self.toggle_overlay, BG3).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3,0))
         
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw", width=290)
+        # Row 2
+        r2 = tk.Frame(actions, bg=BG)
+        r2.pack(fill=tk.X, pady=2)
+        self._action_btn(r2, "🎯 FPS  F10", self.toggle_fps, "#c9372c").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,3))
+        
+        opac_f = tk.Frame(r2, bg=BG)
+        opac_f.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3,0))
+        self._action_btn(opac_f, "−", self.opac_down, BG3, width=3).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,2))
+        tk.Label(opac_f, text="Opac", bg=BG, fg=TEXT2, font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=2)
+        self._action_btn(opac_f, "+", self.opac_up, BG3, width=3).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(2,0))
+
+        # ── Separator ──
+        tk.Frame(self, bg=BORDER, height=1).pack(fill=tk.X, padx=12, pady=8)
+        
+        # ── Mapping header ──
+        mh = tk.Frame(self, bg=BG)
+        mh.pack(fill=tk.X, padx=12)
+        tk.Label(mh, text="MAPEAMENTOS", bg=BG, fg=TEXT2, font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+        ttk.Button(mh, text="+ Novo", style="Green.TButton", command=self.add_key).pack(side=tk.RIGHT)
+
+        # ── Scrollable list ──
+        list_frame = tk.Frame(self, bg=BG)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(5, 0))
+        
+        self.canvas = tk.Canvas(list_frame, bg=BG, highlightthickness=0, bd=0)
+        self.scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = tk.Frame(self.canvas, bg=BG)
+        
+        self.scrollable_frame.bind("<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw", width=280)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
         
-        # Mouse Wheel binding
-        def _on_mousewheel(event):
+        def _wheel(event):
             self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        self.canvas.bind_all("<MouseWheel>", _wheel)
 
-        bottom_frame = tk.Frame(self, bg="#1E1E2E")
-        bottom_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
-        ttk.Button(bottom_frame, text="❌ Fechar", style="Danger.TButton", command=self.quit_app).pack(fill=tk.X, padx=10)
+        # ── Bottom ──
+        bot = tk.Frame(self, bg=BG)
+        bot.pack(fill=tk.X, padx=12, pady=(5, 10))
+        ttk.Button(bot, text="Fechar", style="Red.TButton", command=self.quit_app).pack(fill=tk.X)
 
         self.mappings = [] 
         self.update_list()
@@ -96,9 +164,17 @@ class ScrcpySidebar(tk.Tk):
         self.dock_thread.start()
         
         self.protocol("WM_DELETE_WINDOW", self.quit_app)
+    
+    def _action_btn(self, parent, text, command, bg_color, width=None):
+        """Create a modern dark action button."""
+        btn = tk.Label(parent, text=text, bg=bg_color, fg=TEXT if bg_color == BG3 else "#0d1117",
+                      font=("Segoe UI", 9, "bold"), padx=8, pady=5, cursor="hand2")
+        if width:
+            btn.config(width=width)
+        btn.bind("<Button-1>", lambda e: command())
+        return btn
 
     def send_cmd(self, cmd_str):
-        # IPC directly to C
         try:
             with open("keymap.cmd", "w") as f:
                 f.write(cmd_str + "\n")
@@ -123,7 +199,6 @@ class ScrcpySidebar(tk.Tk):
         self.send_cmd("OPAC_UP")
 
     def save_and_reload(self, *args):
-        # Build lines from UI state automatically
         lines = ["# Scrcpy Keymapper Config\n", "# Types: KEY, MOUSE, AIM, DPAD, SCROLL, MACRO\n"]
         for m in self.mappings:
             type_val = m["type_var"].get()
@@ -197,44 +272,61 @@ class ScrcpySidebar(tk.Tk):
             widget.destroy()
             
         for i, m in enumerate(self.mappings):
-            row = tk.Frame(self.scrollable_frame, bg="#313244", highlightbackground="#45475A", highlightthickness=1)
-            row.pack(fill=tk.X, pady=4, padx=2)
+            cur_type = m["type_var"].get()
+            type_color = TYPE_COLORS.get(cur_type, ACCENT)
             
-            top_row = tk.Frame(row, bg="#313244")
-            top_row.pack(fill=tk.X, padx=5, pady=5)
+            # Card with colored left border
+            card = tk.Frame(self.scrollable_frame, bg=BG2)
+            card.pack(fill=tk.X, pady=3)
+            
+            # Color indicator bar
+            tk.Frame(card, bg=type_color, width=3).pack(side=tk.LEFT, fill=tk.Y)
+            
+            inner = tk.Frame(card, bg=BG2)
+            inner.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=8, pady=6)
             
             # Setup tracers for auto-save
             m["type_var"].trace_add("write", lambda *a: self.save_and_reload())
             m["btn_var"].trace_add("write", lambda *a: self.save_and_reload())
             
-            type_cb = ttk.Combobox(top_row, textvariable=m["type_var"], 
+            # Top: Type + Key + Delete
+            top = tk.Frame(inner, bg=BG2)
+            top.pack(fill=tk.X)
+            
+            type_cb = ttk.Combobox(top, textvariable=m["type_var"], 
                                    values=["KEY", "MOUSE", "AIM", "DPAD", "SCROLL", "MACRO"], 
-                                   width=7, state="readonly")
+                                   width=6, state="readonly", style="Dark.TCombobox", font=("Segoe UI", 9))
             type_cb.pack(side=tk.LEFT)
             
-            val_entry = tk.Entry(top_row, textvariable=m["btn_var"], width=8, bg="#1E1E2E", fg="#CDD6F4", insertbackground="#CDD6F4")
-            val_entry.pack(side=tk.LEFT, padx=5)
+            val_entry = tk.Entry(top, textvariable=m["btn_var"], width=8, bg=BG3, fg=TEXT,
+                                insertbackground=TEXT, font=("Segoe UI", 9), relief="flat", bd=3)
+            val_entry.pack(side=tk.LEFT, padx=6)
             
-            btn = ttk.Button(top_row, text="X", style="Danger.TButton", width=3, command=lambda idx=i: self.remove_item(idx))
-            btn.pack(side=tk.RIGHT)
+            del_btn = tk.Label(top, text="✕", bg=RED, fg=BG, font=("Segoe UI", 8, "bold"),
+                              padx=5, pady=1, cursor="hand2")
+            del_btn.pack(side=tk.RIGHT)
+            del_btn.bind("<Button-1>", lambda e, idx=i: self.remove_item(idx))
             
-            bot_row = tk.Frame(row, bg="#313244")
-            bot_row.pack(fill=tk.X, padx=5, pady=(0, 5))
+            # Bottom: Position + type info
+            info = tk.Frame(inner, bg=BG2)
+            info.pack(fill=tk.X, pady=(3, 0))
             
-            cur_type = m["type_var"].get()
-            info_text = f"Pos: X={m['x']:.2f}  Y={m['y']:.2f}"
+            pos_text = f"X:{m['x']:.2f}  Y:{m['y']:.2f}"
+            extra = ""
             if cur_type == "AIM":
-                info_text += "  [Mira FPS]"
+                extra = "  Mira"
             elif cur_type == "DPAD":
-                info_text += f"  R={m.get('radius', 0.08):.2f} [Joystick]"
+                extra = f"  R:{m.get('radius', 0.08):.2f}"
             elif cur_type == "SCROLL":
-                info_text += "  [Scroll→Swipe]"
+                extra = "  Swipe"
             elif cur_type == "MACRO":
                 steps = m.get('macro_steps', '')
                 n = len(steps.split(';')) if steps else 0
-                info_text += f"  [{n} steps]"
+                extra = f"  {n}steps"
             
-            tk.Label(bot_row, text=info_text, bg="#313244", fg="#A6ADC8", font=("Segoe UI", 8)).pack(side=tk.LEFT)
+            tk.Label(info, text=pos_text, bg=BG2, fg=TEXT2, font=("Segoe UI", 7)).pack(side=tk.LEFT)
+            if extra:
+                tk.Label(info, text=extra, bg=BG2, fg=type_color, font=("Segoe UI", 7, "bold")).pack(side=tk.LEFT)
 
     def dock_loop(self):
         while self.running:
@@ -253,7 +345,7 @@ class ScrcpySidebar(tk.Tk):
             else:
                 self.scrcpy_hwnd = hwnd
                         
-            time.sleep(1.0) # Reduced check frequency since we don't snap position aggressively anymore
+            time.sleep(1.0)
 
     def quit_app(self):
         self.running = False

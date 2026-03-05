@@ -579,66 +579,37 @@ void km_adjust_opacity(float delta) {
 struct km_state *km_get_state(void) { return &state; }
 
 // =====================================================
-// Overlay Rendering
+// Overlay Rendering (Optimized — rects instead of per-pixel circles)
 // =====================================================
 void km_render_overlay(SDL_Renderer *renderer, const SDL_Rect *cr,
                        struct sc_size frame_size) {
   (void)frame_size;
 
-  // Se oculto, sai ANTES do SDL_Render*
   if (!state.show_overlay)
     return;
 
-  // Set transparency enabled
   SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
   uint8_t alpha = (uint8_t)(state.opacity * 255);
 
-  // Draw each binding
   for (int i = 0; i < state.count; i++) {
     struct km_binding *b = &state.bindings[i];
 
-    // Convert percentage to pixel position within content rect
     int cx = cr->x + (int)(cr->w * b->x_pct);
     int cy = cr->y + (int)(cr->h * b->y_pct);
 
-    int radius = 24;
     bool is_sel = (i == state.selected);
     bool is_mouse = (b->type == KM_TYPE_MOUSE);
     bool is_edit = state.edit_mode;
 
-    // Circle fill (semi-transparent)
-    if (is_edit) {
-      if (is_sel) {
-        SDL_SetRenderDrawColor(renderer, 30, 100, 235, alpha);
-      } else if (is_mouse) {
-        SDL_SetRenderDrawColor(renderer, 100, 40, 180, alpha);
-      } else {
-        SDL_SetRenderDrawColor(renderer, 30, 80, 50, alpha);
-      }
-    } else {
-      if (is_mouse) {
-        SDL_SetRenderDrawColor(renderer, 80, 30, 140, (uint8_t)(alpha * 0.5f));
-      } else {
-        SDL_SetRenderDrawColor(renderer, 0, 140, 180, (uint8_t)(alpha * 0.5f));
-      }
-    }
-    km_draw_filled_circle(renderer, cx, cy, radius);
+    // Button size
+    int bw = 44, bh = 28;
 
-    // Circle outline
-    if (is_edit && is_sel) {
-      SDL_SetRenderDrawColor(renderer, 88, 166, 255, 255);
-    } else if (is_mouse) {
-      SDL_SetRenderDrawColor(renderer, 137, 87, 229, alpha);
-    } else {
-      SDL_SetRenderDrawColor(renderer, 0, 200, 220, alpha);
-    }
-    km_draw_circle(renderer, cx, cy, radius);
-    km_draw_circle(renderer, cx, cy, radius - 1);
-
-    // Label text
+    // Get label early to size button
     const char *label;
     char shortlabel[8];
-    if (b->type == KM_TYPE_KEY) {
+    if (b->type == KM_TYPE_KEY || b->type == KM_TYPE_AIM ||
+        b->type == KM_TYPE_DPAD || b->type == KM_TYPE_SCROLL ||
+        b->type == KM_TYPE_MACRO) {
       label = SDL_GetKeyName(b->keycode);
     } else {
       if (b->mouse_button == SDL_BUTTON_LEFT)
@@ -648,23 +619,58 @@ void km_render_overlay(SDL_Renderer *renderer, const SDL_Rect *cr,
       else
         label = "MM";
     }
-    // Truncate for display
     strncpy(shortlabel, label, 6);
     shortlabel[6] = '\0';
-    // Uppercase
     for (int j = 0; shortlabel[j]; j++) {
       if (shortlabel[j] >= 'a' && shortlabel[j] <= 'z')
         shortlabel[j] -= 32;
     }
 
-    int scale = 2;
-    int tw = km_text_width(shortlabel, scale);
-    int tx = cx - tw / 2;
-    int ty = cy - 7;
+    int tw = km_text_width(shortlabel, 2);
+    if (tw + 12 > bw)
+      bw = tw + 12;
 
+    SDL_Rect btn = {cx - bw / 2, cy - bh / 2, bw, bh};
+
+    // Fill color
+    if (is_edit) {
+      if (is_sel)
+        SDL_SetRenderDrawColor(renderer, 88, 166, 255, alpha);
+      else if (is_mouse)
+        SDL_SetRenderDrawColor(renderer, 137, 87, 229, alpha);
+      else
+        SDL_SetRenderDrawColor(renderer, 40, 120, 70, alpha);
+    } else {
+      if (b->type == KM_TYPE_AIM)
+        SDL_SetRenderDrawColor(renderer, 200, 60, 60, (uint8_t)(alpha * 0.6f));
+      else if (b->type == KM_TYPE_DPAD)
+        SDL_SetRenderDrawColor(renderer, 60, 60, 200, (uint8_t)(alpha * 0.6f));
+      else if (b->type == KM_TYPE_SCROLL)
+        SDL_SetRenderDrawColor(renderer, 200, 150, 30, (uint8_t)(alpha * 0.6f));
+      else if (b->type == KM_TYPE_MACRO)
+        SDL_SetRenderDrawColor(renderer, 180, 60, 180, (uint8_t)(alpha * 0.6f));
+      else if (is_mouse)
+        SDL_SetRenderDrawColor(renderer, 100, 40, 170, (uint8_t)(alpha * 0.5f));
+      else
+        SDL_SetRenderDrawColor(renderer, 0, 140, 180, (uint8_t)(alpha * 0.5f));
+    }
+    SDL_RenderFillRect(renderer, &btn);
+
+    // Border (1 call instead of per-pixel circle)
+    if (is_edit && is_sel)
+      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    else if (is_mouse)
+      SDL_SetRenderDrawColor(renderer, 180, 120, 255, alpha);
+    else
+      SDL_SetRenderDrawColor(renderer, 0, 220, 240, alpha);
+    SDL_RenderDrawRect(renderer, &btn);
+
+    // Label — centered
+    int tx = cx - tw / 2;
+    int ty = cy - 6;
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    km_draw_text(renderer, tx, ty, shortlabel, scale);
-  } // end of for loop drawing bindings
+    km_draw_text(renderer, tx, ty, shortlabel, 2);
+  }
 }
 
 // =====================================================
