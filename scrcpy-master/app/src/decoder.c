@@ -16,15 +16,7 @@ static bool sc_decoder_open(struct sc_decoder *decoder, AVCodecContext *ctx) {
     return false;
   }
 
-  decoder->sw_frame = av_frame_alloc();
-  if (!decoder->sw_frame) {
-    av_frame_free(&decoder->frame);
-    LOG_OOM();
-    return false;
-  }
-
   if (!sc_frame_source_sinks_open(&decoder->frame_source, ctx)) {
-    av_frame_free(&decoder->sw_frame);
     av_frame_free(&decoder->frame);
     return false;
   }
@@ -36,7 +28,6 @@ static bool sc_decoder_open(struct sc_decoder *decoder, AVCodecContext *ctx) {
 
 static void sc_decoder_close(struct sc_decoder *decoder) {
   sc_frame_source_sinks_close(&decoder->frame_source);
-  av_frame_free(&decoder->sw_frame);
   av_frame_free(&decoder->frame);
 }
 
@@ -66,34 +57,10 @@ static bool sc_decoder_push(struct sc_decoder *decoder,
       return false;
     }
 
-    bool ok;
-    AVFrame *render_frame = decoder->frame;
-
-    // Se o frame é de aceleração de hardware (ex: VRAM D3D11, CUDA, DXVA2),
-    // passamos de volta pra RAM do SDL
-    if (decoder->frame->format == AV_PIX_FMT_D3D11 ||
-        decoder->frame->format == AV_PIX_FMT_CUDA ||
-        decoder->frame->format == AV_PIX_FMT_DXVA2_VLD ||
-        decoder->frame->hw_frames_ctx != NULL) {
-
-      ret = av_hwframe_transfer_data(decoder->sw_frame, decoder->frame, 0);
-      if (ret < 0) {
-        LOGE("Decoder '%s': falha ao transferir hw frame para RAM/sw frame: %d",
-             decoder->name, ret);
-        av_frame_unref(decoder->frame);
-        return false;
-      }
-      render_frame = decoder->sw_frame;
-    }
-
     // a frame was received
-    ok = sc_frame_source_sinks_push(&decoder->frame_source, render_frame);
-
+    bool ok =
+        sc_frame_source_sinks_push(&decoder->frame_source, decoder->frame);
     av_frame_unref(decoder->frame);
-    if (render_frame == decoder->sw_frame) {
-      av_frame_unref(decoder->sw_frame);
-    }
-
     if (!ok) {
       // Error already logged
       return false;
