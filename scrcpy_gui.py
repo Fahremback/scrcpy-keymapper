@@ -161,6 +161,13 @@ class ScrcpySidebar(tk.Tk):
         # Global key capture
         self.bind_all("<Key>", self._on_key_press)
         
+        def _on_tab_press(e):
+            if self.capturing_key_for is not None:
+                e.keysym = "tab"
+                self._on_key_press(e)
+                return "break"
+        self.bind_all("<Tab>", _on_tab_press)
+        
         self.dock_thread = threading.Thread(target=self.dock_loop, daemon=True)
         self.dock_thread.start()
         self.protocol("WM_DELETE_WINDOW", self.quit_app)
@@ -284,6 +291,7 @@ class ScrcpySidebar(tk.Tk):
         self.render_list()
 
     def add_mapping(self):
+        self.mappings = self._read_file() # fetch latest from C
         t = self.add_type.get()
         m = {"type": t, "key": "unknown", "x": 0.5, "y": 0.5, "radius": 0.08, "macro_steps": ""}
         if t == "MOUSE":
@@ -301,6 +309,7 @@ class ScrcpySidebar(tk.Tk):
         self.render_list()
 
     def remove_item(self, idx):
+        self.mappings = self._read_file() # fetch latest from C
         if 0 <= idx < len(self.mappings):
             self.mappings.pop(idx)
             self.save_and_reload()
@@ -415,8 +424,11 @@ class ScrcpySidebar(tk.Tk):
         
         def _update_radius(*a):
             try:
-                m["radius"] = float(rv.get())
-                self.save_and_reload()
+                val = float(rv.get())
+                self.mappings = self._read_file()
+                if 0 <= idx < len(self.mappings):
+                    self.mappings[idx]["radius"] = val
+                    self.save_and_reload()
             except: pass
         rv.trace_add("write", _update_radius)
     
@@ -535,8 +547,10 @@ class ScrcpySidebar(tk.Tk):
                     d = int(sw["delay"].get())
                     parts.append(f"{x:.3f},{y:.3f},{d}")
                 except: pass
-            m["macro_steps"] = ";".join(parts)
-            self.save_and_reload()
+            self.mappings = self._read_file()
+            if 0 <= idx < len(self.mappings):
+                self.mappings[idx]["macro_steps"] = ";".join(parts)
+                self.save_and_reload()
             win.destroy()
             self.render_list()
         

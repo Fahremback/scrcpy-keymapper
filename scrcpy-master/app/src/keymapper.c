@@ -612,7 +612,7 @@ km_render_overlay(SDL_Renderer *renderer, const struct SDL_FRect *cr,
         bool is_edit = state.edit_mode;
 
         // Button size
-        float bw = 44.0f, bh = 28.0f;
+        float bw = 32.0f, bh = 22.0f;
 
         // Get label early to size button
         const char *label;
@@ -636,9 +636,9 @@ km_render_overlay(SDL_Renderer *renderer, const struct SDL_FRect *cr,
                 shortlabel[j] -= 32;
         }
 
-        float tw = km_text_width(shortlabel, 2.0f);
-        if (tw + 12.0f > bw)
-            bw = tw + 12.0f;
+        float tw = km_text_width(shortlabel, 1.8f);
+        if (tw + 8.0f > bw)
+            bw = tw + 8.0f;
 
         SDL_FRect btn = {cx - bw / 2.0f, cy - bh / 2.0f, bw, bh};
 
