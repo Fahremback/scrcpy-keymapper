@@ -17,7 +17,6 @@
 /**
  * Byte                Content
  * -----------------------------------
- * [0]                 media packet flag
  * [0]                 session packet flag
  * [0]                 config packet flag
  * [0]                 key frame flag
@@ -66,8 +65,8 @@
 
 #define SC_PACKET_HEADER_SIZE 12
 
-#define SC_PACKET_FLAG_SESSION ((uint64_t) 1 << 63)
-#define SC_PACKET_FLAG_CONFIG  ((uint64_t) 1 << 62)
+#define SC_PACKET_FLAG_SESSION   ((uint64_t) 1 << 63)
+#define SC_PACKET_FLAG_CONFIG    ((uint64_t) 1 << 62)
 #define SC_PACKET_FLAG_KEY_FRAME ((uint64_t) 1 << 61)
 
 #define SC_PACKET_PTS_MASK (SC_PACKET_FLAG_KEY_FRAME - 1)
@@ -124,13 +123,14 @@ sc_demuxer_parse_media(const uint8_t buf[static SC_PACKET_HEADER_SIZE],
     assert(!sc_demuxer_is_session(buf));
     uint64_t pts_flags = sc_read64be(buf);
     if (pts_flags & SC_PACKET_FLAG_CONFIG) {
-        packet->flags |= AV_PKT_FLAG_CORRUPT;
+        packet->pts = AV_NOPTS_VALUE;
+    } else {
+        if (pts_flags & SC_PACKET_FLAG_KEY_FRAME) {
+            packet->flags |= AV_PKT_FLAG_KEY;
+        }
+        uint64_t pts = pts_flags & SC_PACKET_PTS_MASK;
+        packet->pts = (int64_t) pts;
     }
-    if (pts_flags & SC_PACKET_FLAG_KEY_FRAME) {
-        packet->flags |= AV_PKT_FLAG_KEY;
-    }
-    uint64_t pts = pts_flags & SC_PACKET_PTS_MASK;
-    packet->pts = pts == SC_PACKET_PTS_MASK ? AV_NOPTS_VALUE : (int64_t) pts;
     packet->size = sc_read32be(&buf[8]);
 }
 
