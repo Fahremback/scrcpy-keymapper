@@ -9,7 +9,6 @@
 #include "common.h"
 #include "compat.h"
 #include "events.h"
-#include "options.h"
 #include "packet_merger.h"
 #include "util/binary.h"
 #include "util/log.h"
@@ -25,9 +24,9 @@
  * [0..7]              PTS (62 bits)
  * [8..11]             packet size (32 bits)
  *
- * The most significant bit of byte 0 is the media packet flag:
- *  - 0: session packet
- *  - 1: media packet
+ * The most significant bit of byte 0 is the packet type flag:
+ *  - 1: session packet
+ *  - 0: media packet
  *
  * For a session packet:
  *  - the next bit is the client resized flag (R)
@@ -36,7 +35,7 @@
  *  - the next 4 bytes contain the video height (32 bits)
  *
  *  byte 0   byte 1   byte 2   byte 3
- * 00000000 00000000 00000000 0000000R
+ * 10000000 00000000 00000000 0000000R
  * ^<------------------------------->^
  * |               padding           |
  *  `- session packet flag            `- client resized flag
@@ -53,7 +52,7 @@
  *  - the next 4 bytes contain the packet size (32 bits)
  *
  *  byte 0   byte 1   byte 2   byte 3   byte 4   byte 5   byte 6   byte 7
- * 1CK..... ........ ........ ........ ........ ........ ........ ........
+ * 0CK..... ........ ........ ........ ........ ........ ........ ........
  * ^^<------------------------------------------------------------------>
  * ||                                PTS
  * | `- key frame flag
@@ -67,8 +66,8 @@
 
 #define SC_PACKET_HEADER_SIZE 12
 
-#define SC_PACKET_FLAG_MEDIA (~((uint64_t) 1 << 63))
-#define SC_PACKET_FLAG_CONFIG ((uint64_t) 1 << 62)
+#define SC_PACKET_FLAG_SESSION ((uint64_t) 1 << 63)
+#define SC_PACKET_FLAG_CONFIG  ((uint64_t) 1 << 62)
 #define SC_PACKET_FLAG_KEY_FRAME ((uint64_t) 1 << 61)
 
 #define SC_PACKET_PTS_MASK (SC_PACKET_FLAG_KEY_FRAME - 1)
@@ -76,28 +75,28 @@
 static enum AVCodecID
 sc_demuxer_to_avcodec_id(uint32_t codec_id) {
     switch (codec_id) {
-        case SC_CODEC_H264:
+        case 0x68323634: // "h264"
             return AV_CODEC_ID_H264;
-        case SC_CODEC_H265:
+        case 0x68323635: // "h265"
             return AV_CODEC_ID_HEVC;
-        case SC_CODEC_AV1:
+        case 0x00617631: // "av1"
 #ifdef SCRCPY_LAVF_HAS_AV1
             return AV_CODEC_ID_AV1;
 #else
             LOGE("AV1 not supported by this FFmpeg version");
             return AV_CODEC_ID_NONE;
 #endif
-        case SC_CODEC_VP8:
+        case 0x00767038: // "vp8"
             return AV_CODEC_ID_VP8;
-        case SC_CODEC_VP9:
+        case 0x00767039: // "vp9"
             return AV_CODEC_ID_VP9;
-        case SC_CODEC_OPUS:
+        case 0x6f707573: // "opus"
             return AV_CODEC_ID_OPUS;
-        case SC_CODEC_AAC:
+        case 0x00616163: // "aac"
             return AV_CODEC_ID_AAC;
-        case SC_CODEC_FLAC:
+        case 0x666c6163: // "flac"
             return AV_CODEC_ID_FLAC;
-        case SC_CODEC_RAW:
+        case 0x00726177: // "raw"
             return AV_CODEC_ID_PCM_S16LE;
         default:
             LOGE("Unknown codec id 0x%08" PRIx32, codec_id);
@@ -107,7 +106,7 @@ sc_demuxer_to_avcodec_id(uint32_t codec_id) {
 
 static inline bool
 sc_demuxer_is_session(const uint8_t buf[static SC_PACKET_HEADER_SIZE]) {
-    return !(buf[0] & 0x80);
+    return (buf[0] & 0x80) != 0;
 }
 
 static void
@@ -273,7 +272,7 @@ run_demuxer(void *data) {
         codec_ctx->ch_layout = (AVChannelLayout) AV_CHANNEL_LAYOUT_STEREO;
         codec_ctx->sample_rate = 48000;
 
-        if (raw_codec_id == SC_CODEC_FLAC) {
+        if (raw_codec_id == 0x666c6163) { // FLAC
             codec_ctx->sample_fmt = AV_SAMPLE_FMT_S16;
         }
     }
@@ -288,8 +287,7 @@ run_demuxer(void *data) {
         goto finally_free_context;
     }
 
-    bool is_h26x = raw_codec_id == SC_CODEC_H264
-                || raw_codec_id == SC_CODEC_H265;
+    bool is_h26x = raw_codec_id == 0x68323634 || raw_codec_id == 0x68323635;
     bool is_audio = codec->type == AVMEDIA_TYPE_AUDIO;
     bool must_merge_config_packet = is_h26x || is_audio;
 
