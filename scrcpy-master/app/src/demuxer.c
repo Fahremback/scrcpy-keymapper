@@ -225,6 +225,9 @@ run_demuxer(void *data) {
     }
 
     codec_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    // === EXTREME LOW LATENCY DECODE FLAGS ===
+    codec_ctx->flags2 |= AV_CODEC_FLAG2_FAST;
+    codec_ctx->skip_loop_filter = AVDISCARD_ALL;
 
     uint8_t header[SC_PACKET_HEADER_SIZE];
     struct sc_stream_session session_data;
