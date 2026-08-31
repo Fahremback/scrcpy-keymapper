@@ -421,39 +421,70 @@ class LauncherApp(tk.Tk):
         threading.Thread(target=_do, daemon=True).start()
     
     def _show_devices(self, wifi_devices, usb_devices):
-        """Show the device list UI (filtering Wi-Fi only for launch)."""
+        """Show the device list UI (supports both USB and Wi-Fi)."""
         for w in self.conn_inner.winfo_children(): w.destroy()
         f = self.conn_inner
         
-        if wifi_devices:
+        all_devs = [(s, n, "wifi") for s, n in wifi_devices] + [(s, n, "usb") for s, n in usb_devices]
+        
+        if all_devs:
             self.dot.config(fg=GREEN)
-            count = len(wifi_devices)
-            self.status_text.config(text=f"{count} celular{'es' if count > 1 else ''} Wi-Fi conectado{'s' if count > 1 else ''}")
-            self.device_text.config(text=wifi_devices[0][1])
-            self.found_device = wifi_devices[0][0]  # Use first Wi-Fi device
+            
+            # Keep selected device if still valid, otherwise default to first
+            valid_serials = [d[0] for d in all_devs]
+            if not self.found_device or self.found_device not in valid_serials:
+                self.found_device = all_devs[0][0]
+                
+            selected_info = next((d for d in all_devs if d[0] == self.found_device), all_devs[0])
+            self.status_text.config(text="Celular Conectado e Pronto")
+            self.device_text.config(text=f"{selected_info[1]} ({'Wi-Fi' if selected_info[2] == 'wifi' else 'USB'})")
             self.launch_btn.config(state="normal")
             
-            # Device list
-            for serial, name in wifi_devices:
-                card = tk.Frame(f, bg=BG2, highlightbackground=GREEN, highlightthickness=1)
+            # List of all devices
+            for serial, name, dev_type in all_devs:
+                is_selected = (serial == self.found_device)
+                border_c = ACCENT if is_selected else BORDER
+                
+                card = tk.Frame(f, bg=BG2, highlightbackground=border_c, highlightthickness=2 if is_selected else 1, cursor="hand2")
                 card.pack(fill=tk.X, padx=10, pady=4)
+                
+                def _select(s=serial, n=name, dt=dev_type):
+                    self.found_device = s
+                    self.device_text.config(text=f"{n} ({'Wi-Fi' if dt == 'wifi' else 'USB'})")
+                    self._show_devices(wifi_devices, usb_devices)
+                    
+                card.bind("<Button-1>", lambda e, s=serial, n=name, dt=dev_type: _select(s, n, dt))
                 
                 row = tk.Frame(card, bg=BG2)
                 row.pack(fill=tk.X, padx=10, pady=8)
+                row.bind("<Button-1>", lambda e, s=serial, n=name, dt=dev_type: _select(s, n, dt))
                 
-                # Green dot + info
-                tk.Label(row, text="📶", bg=BG2, fg=GREEN, font=("Segoe UI", 12)).pack(side=tk.LEFT)
+                # Icon
+                icon = "📶" if dev_type == "wifi" else "🔌"
+                tk.Label(row, text=icon, bg=BG2, font=("Segoe UI", 12)).pack(side=tk.LEFT)
+                
                 info_f = tk.Frame(row, bg=BG2)
                 info_f.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
-                tk.Label(info_f, text=name, bg=BG2, fg=TEXT, font=("Segoe UI", 10, "bold"), anchor="w").pack(anchor="w")
-                short = serial[:38] + "..." if len(serial) > 38 else serial
-                tk.Label(info_f, text=short, bg=BG2, fg=ACCENT, font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+                info_f.bind("<Button-1>", lambda e, s=serial, n=name, dt=dev_type: _select(s, n, dt))
                 
-                # Disconnect button
-                del_btn = tk.Label(row, text=" ✕ ", bg=RED, fg=BG, font=("Segoe UI", 9, "bold"),
-                                  cursor="hand2", padx=4, pady=1)
-                del_btn.pack(side=tk.RIGHT)
-                del_btn.bind("<Button-1>", lambda e, s=serial: self.disconnect_device(s))
+                tag_txt = " (Selecionado)" if is_selected else ""
+                tk.Label(info_f, text=f"{name}{tag_txt}", bg=BG2, fg=ACCENT if is_selected else TEXT,
+                         font=("Segoe UI", 10, "bold"), anchor="w").pack(anchor="w")
+                
+                type_label = "Wi-Fi (Wireless Debugging)" if dev_type == "wifi" else "USB (Cabo Direto)"
+                tk.Label(info_f, text=type_label, bg=BG2, fg=GREEN if dev_type == "usb" else TEXT2,
+                         font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+                
+                # Right action button
+                if dev_type == "wifi":
+                    del_btn = tk.Label(row, text=" ✕ ", bg=RED, fg=BG, font=("Segoe UI", 9, "bold"),
+                                      cursor="hand2", padx=4, pady=1)
+                    del_btn.pack(side=tk.RIGHT)
+                    del_btn.bind("<Button-1>", lambda e, s=serial: self.disconnect_device(s))
+                else:
+                    wifi_btn = ttk.Button(row, text="Ativar Wi-Fi 📶", style="Ghost.TButton",
+                                         command=lambda s=serial: self.enable_wifi_from_usb(s))
+                    wifi_btn.pack(side=tk.RIGHT)
             
             # Actions inside connected area
             actions = tk.Frame(f, bg=BG)
@@ -461,38 +492,22 @@ class LauncherApp(tk.Tk):
             
             ttk.Button(actions, text="↻  Re-escanear", style="Ghost.TButton",
                       command=self.scan_devices).pack(side=tk.LEFT, padx=(0, 5))
-            ttk.Button(actions, text="+  Parear Outro", style="Blue.TButton",
+            ttk.Button(actions, text="+  Parear / Conectar IP", style="Blue.TButton",
                       command=self._show_add_device).pack(side=tk.RIGHT)
                       
         else:
-            self.dot.config(fg=YELLOW if usb_devices else RED)
-            self.status_text.config(text="Nenhum celular Wi-Fi conectado")
+            self.dot.config(fg=RED)
+            self.status_text.config(text="Nenhum celular conectado")
             self.device_text.config(text="")
             self.found_device = None
             self.launch_btn.config(state="disabled")
             
-            # If USB device is detected, offer 1-click Wi-Fi switch
-            if usb_devices:
-                usb_card = tk.Frame(f, bg=BG2, highlightbackground=YELLOW, highlightthickness=1)
-                usb_card.pack(fill=tk.X, padx=10, pady=8)
-                
-                tk.Label(usb_card, text="📱 Celular detectado via USB:", bg=BG2, fg=YELLOW,
-                         font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
-                
-                for s, n in usb_devices:
-                    r = tk.Frame(usb_card, bg=BG2)
-                    r.pack(fill=tk.X, padx=10, pady=(0, 6))
-                    tk.Label(r, text=f"{n} ({s})", bg=BG2, fg=TEXT, font=("Segoe UI", 9)).pack(side=tk.LEFT)
-                    btn = ttk.Button(r, text="Ativar Wi-Fi 📶", style="Blue.TButton",
-                                    command=lambda u_ser=s: self.enable_wifi_from_usb(u_ser))
-                    btn.pack(side=tk.RIGHT)
-            
             # Empty state info
             empty = tk.Frame(f, bg=BG2, highlightbackground=BORDER, highlightthickness=1)
             empty.pack(fill=tk.X, padx=10, pady=6)
-            tk.Label(empty, text="📶", bg=BG2, font=("Segoe UI", 26)).pack(pady=(12, 4))
-            tk.Label(empty, text="Conexão Wi-Fi Necessária", bg=BG2, fg=TEXT, font=("Segoe UI", 11, "bold")).pack()
-            tk.Label(empty, text="Ative a Depuração sem Fio no celular\nou conecte via IP abaixo", bg=BG2, fg=TEXT2,
+            tk.Label(empty, text="📱", bg=BG2, font=("Segoe UI", 26)).pack(pady=(12, 4))
+            tk.Label(empty, text="Nenhum dispositivo encontrado", bg=BG2, fg=TEXT, font=("Segoe UI", 11, "bold")).pack()
+            tk.Label(empty, text="Conecte o cabo USB ou ative\na Depuração sem Fio no celular", bg=BG2, fg=TEXT2,
                     font=("Segoe UI", 8)).pack(pady=(2, 10))
             
             actions = tk.Frame(f, bg=BG)
