@@ -629,9 +629,7 @@ class LauncherApp(tk.Tk):
         if codec != "h264":
             cmd += ["--video-codec", codec]
             
-        # EXTREME LOW LATENCY OPTIONS (Snapdragon Gen 2 optimized)
-        if codec in ["h264", "h265"]:
-            cmd += ["--video-codec-options", "profile=1,level=4096"]
+        # Removed profile/level options as they can cause black screens on some devices
             
         vb = c.get("video_buffer", "0")
         if vb != "0": cmd += ["--video-buffer", str(vb)]
