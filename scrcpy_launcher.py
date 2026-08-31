@@ -1,5 +1,6 @@
 """
 Scrcpy Launcher — UI Premium com detecção ADB, pareamento e configuração.
+Detecção focada em conexões Wi-Fi / Wireless Debugging.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -9,9 +10,42 @@ import sys
 import time
 import threading
 import json
+import shutil
+import re
 
-ADB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "adb.exe")
-SCRCPY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scrcpy.exe")
+def find_adb():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "adb.exe"),
+        r"C:\Users\fahre\Desktop\Ferramentas\adb\platform-tools\adb.exe",
+        r"C:\Users\fahre\Desktop\Ferramentas\scrcpy-win64-v3.3.4\adb.exe",
+        r"C:\Users\fahre\Documents\antigravity\wise-faraday\tools\platform-tools\adb.exe",
+        os.path.expanduser(r"~\AppData\Local\Android\Sdk\platform-tools\adb.exe"),
+        shutil.which("adb.exe") or "",
+        shutil.which("adb") or "",
+    ]
+    for c in candidates:
+        if c and os.path.exists(c):
+            return os.path.abspath(c)
+    return "adb.exe"
+
+def find_scrcpy():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "scrcpy.exe"),
+        os.path.join(base_dir, "scrcpy-master", "build-win64", "app", "scrcpy.exe"),
+        os.path.join(base_dir, "build", "app", "scrcpy.exe"),
+        r"C:\Users\fahre\Desktop\Ferramentas\scrcpy-win64-v3.3.4\scrcpy.exe",
+        shutil.which("scrcpy.exe") or "",
+        shutil.which("scrcpy") or "",
+    ]
+    for c in candidates:
+        if c and os.path.exists(c):
+            return os.path.abspath(c)
+    return "scrcpy.exe"
+
+ADB_PATH = find_adb()
+SCRCPY_PATH = find_scrcpy()
 GUI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scrcpy_gui.py")
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launcher_config.json")
 
@@ -52,27 +86,89 @@ def save_config(cfg):
     except:
         pass
 
-def run_adb(*args):
+def run_adb(*args, timeout=10):
+    adb_path = find_adb()
+    adb_dir = os.path.dirname(adb_path) if os.path.isabs(adb_path) else os.path.dirname(os.path.abspath(__file__))
+    env = os.environ.copy()
+    if adb_dir:
+        env["PATH"] = adb_dir + os.pathsep + env.get("PATH", "")
     try:
-        r = subprocess.run([ADB_PATH] + list(args), capture_output=True, text=True, timeout=10,
-                          creationflags=subprocess.CREATE_NO_WINDOW)
+        r = subprocess.run(
+            [adb_path] + list(args),
+            cwd=adb_dir if os.path.exists(adb_dir) else None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
         return r.returncode, r.stdout.strip(), r.stderr.strip()
     except Exception as e:
         return -1, "", str(e)
 
-def get_devices():
-    code, out, _ = run_adb("devices")
-    devs = []
-    if code == 0:
-        for line in out.splitlines()[1:]:
-            p = line.strip().split('\t')
-            if len(p) >= 2:
-                devs.append((p[0], p[1]))
-    return devs
+def is_wifi_serial(serial):
+    """Verifica se o serial do dispositivo corresponde a uma conexão Wi-Fi / Rede."""
+    return ":" in serial or "._tcp" in serial or "._adb" in serial
 
-def get_name(serial):
+def get_devices():
+    """Retorna lista de dispositivos Wi-Fi conectados e eventuais dispositivos USB detectados."""
+    code, out, _ = run_adb("devices", "-l")
+    wifi_devs = []
+    usb_devs = []
+    
+    if code == 0:
+        for line in out.splitlines():
+            line = line.strip()
+            if not line or line.startswith("List of devices"):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                serial = parts[0]
+                status = parts[1]
+                
+                model = ""
+                for p in parts[2:]:
+                    if p.startswith("model:"):
+                        model = p.split(":", 1)[1].replace("_", " ")
+                
+                if status == "device":
+                    if is_wifi_serial(serial):
+                        wifi_devs.append((serial, status, model))
+                    else:
+                        usb_devs.append((serial, status, model))
+                        
+    return wifi_devs, usb_devs
+
+def get_device_name(serial, fallback_model=""):
+    # Tenta obter nome comercial (ex: POCO F6 Pro)
+    code, out, _ = run_adb("-s", serial, "shell", "getprop", "ro.product.marketname")
+    if code == 0 and out.strip():
+        name = out.strip()
+        code2, out2, _ = run_adb("-s", serial, "shell", "getprop", "ro.product.model")
+        if code2 == 0 and out2.strip() and out2.strip() not in name:
+            return f"{name} ({out2.strip()})"
+        return name
+
     code, out, _ = run_adb("-s", serial, "shell", "getprop", "ro.product.model")
-    return out.strip() if code == 0 and out else serial[:20]
+    if code == 0 and out.strip():
+        return out.strip()
+
+    if fallback_model:
+        return fallback_model
+
+    return f"Android ({serial[:18]})"
+
+def get_device_ip(serial):
+    """Obtém o endereço IP local do dispositivo Wi-Fi."""
+    code, out, _ = run_adb("-s", serial, "shell", "ip -f inet addr show wlan0")
+    if code == 0 and out:
+        m = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", out)
+        if m:
+            return m.group(1)
+    code, out, _ = run_adb("-s", serial, "shell", "getprop", "dhcp.wlan0.ipaddress")
+    if code == 0 and out.strip():
+        return out.strip()
+    return ""
 
 
 def apply_dark_theme(root):
@@ -136,8 +232,8 @@ def apply_dark_theme(root):
 class LauncherApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Scrcpy Launcher")
-        self.geometry("460x720")
+        self.title("Scrcpy Keymapper Launcher")
+        self.geometry("460x730")
         self.configure(bg=BG)
         self.resizable(False, False)
         self.cfg = load_config()
@@ -146,7 +242,7 @@ class LauncherApp(tk.Tk):
         # Center
         self.update_idletasks()
         x = (self.winfo_screenwidth() // 2) - 230
-        y = (self.winfo_screenheight() // 2) - 360
+        y = (self.winfo_screenheight() // 2) - 365
         self.geometry(f"+{x}+{y}")
         
         # ── Header ──
@@ -154,8 +250,8 @@ class LauncherApp(tk.Tk):
         hdr.pack(fill=tk.X, padx=20, pady=(18, 5))
         tk.Label(hdr, text="SCRCPY LAUNCHER", bg=BG, fg=TEXT,
                 font=("Segoe UI", 18, "bold")).pack(side=tk.LEFT)
-        tk.Label(hdr, text="v2.0", bg=BG, fg=TEXT2,
-                font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=8, pady=5)
+        tk.Label(hdr, text="Wi-Fi 4.1", bg=BG, fg=ACCENT,
+                font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=8, pady=5)
         
         # ── Status card ──
         self.status_card = tk.Frame(self, bg=BG2, highlightbackground=BORDER, highlightthickness=1)
@@ -167,7 +263,7 @@ class LauncherApp(tk.Tk):
         self.dot.pack(side=tk.LEFT)
         info = tk.Frame(row, bg=BG2)
         info.pack(side=tk.LEFT, padx=8)
-        self.status_text = tk.Label(info, text="Procurando dispositivos...", bg=BG2, fg=TEXT,
+        self.status_text = tk.Label(info, text="Procurando conexões Wi-Fi...", bg=BG2, fg=TEXT,
                                    font=("Segoe UI", 11, "bold"), anchor="w")
         self.status_text.pack(anchor="w")
         self.device_text = tk.Label(info, text="", bg=BG2, fg=TEXT2, font=("Segoe UI", 8), anchor="w")
@@ -179,7 +275,7 @@ class LauncherApp(tk.Tk):
         
         # Tab: Conexão
         self.conn_tab = tk.Frame(nb, bg=BG)
-        nb.add(self.conn_tab, text="   Conexão   ")
+        nb.add(self.conn_tab, text="   Conexão Wi-Fi   ")
         self.conn_inner = tk.Frame(self.conn_tab, bg=BG)
         self.conn_inner.pack(fill=tk.BOTH, expand=True)
         
@@ -197,7 +293,7 @@ class LauncherApp(tk.Tk):
         ttk.Button(bot, text="Fechar", style="Ghost.TButton", command=self.destroy).pack(fill=tk.X)
         
         self.found_device = None
-        self.after(400, self.scan_devices)
+        self.after(300, self.scan_devices)
     
     # ──────── Config Tab (scrollable) ────────
     def _build_config_tab(self, parent):
@@ -302,37 +398,43 @@ class LauncherApp(tk.Tk):
     # ──────── Connection ────────
     def scan_devices(self):
         self.dot.config(fg=YELLOW)
-        self.status_text.config(text="Procurando dispositivos...")
+        self.status_text.config(text="Procurando conexões Wi-Fi...")
         self.device_text.config(text="")
         self.launch_btn.config(state="disabled")
         for w in self.conn_inner.winfo_children(): w.destroy()
         
         def _do():
-            devs = get_devices()
-            online = [d for d in devs if d[1] == "device"]
-            # Get names for all devices
-            named = []
-            for serial, status in online:
-                n = get_name(serial)
-                named.append((serial, n))
-            self.after(0, lambda: self._show_devices(named))
+            wifi_devs, usb_devs = get_devices()
+            
+            # Format named wifi devices
+            named_wifi = []
+            for serial, status, model in wifi_devs:
+                n = get_device_name(serial, fallback_model=model)
+                named_wifi.append((serial, n))
+            
+            named_usb = []
+            for serial, status, model in usb_devs:
+                n = get_device_name(serial, fallback_model=model)
+                named_usb.append((serial, n))
+                
+            self.after(0, lambda: self._show_devices(named_wifi, named_usb))
         threading.Thread(target=_do, daemon=True).start()
     
-    def _show_devices(self, devices):
-        """Show the device list UI."""
+    def _show_devices(self, wifi_devices, usb_devices):
+        """Show the device list UI (filtering Wi-Fi only for launch)."""
         for w in self.conn_inner.winfo_children(): w.destroy()
         f = self.conn_inner
         
-        if devices:
+        if wifi_devices:
             self.dot.config(fg=GREEN)
-            count = len(devices)
-            self.status_text.config(text=f"{count} dispositivo{'s' if count > 1 else ''} conectado{'s' if count > 1 else ''}")
-            self.device_text.config(text="")
-            self.found_device = devices[0][0]  # Use first device
+            count = len(wifi_devices)
+            self.status_text.config(text=f"{count} celular{'es' if count > 1 else ''} Wi-Fi conectado{'s' if count > 1 else ''}")
+            self.device_text.config(text=wifi_devices[0][1])
+            self.found_device = wifi_devices[0][0]  # Use first Wi-Fi device
             self.launch_btn.config(state="normal")
             
             # Device list
-            for serial, name in devices:
+            for serial, name in wifi_devices:
                 card = tk.Frame(f, bg=BG2, highlightbackground=GREEN, highlightthickness=1)
                 card.pack(fill=tk.X, padx=10, pady=4)
                 
@@ -340,14 +442,14 @@ class LauncherApp(tk.Tk):
                 row.pack(fill=tk.X, padx=10, pady=8)
                 
                 # Green dot + info
-                tk.Label(row, text="●", bg=BG2, fg=GREEN, font=("Segoe UI", 10)).pack(side=tk.LEFT)
+                tk.Label(row, text="📶", bg=BG2, fg=GREEN, font=("Segoe UI", 12)).pack(side=tk.LEFT)
                 info_f = tk.Frame(row, bg=BG2)
                 info_f.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
                 tk.Label(info_f, text=name, bg=BG2, fg=TEXT, font=("Segoe UI", 10, "bold"), anchor="w").pack(anchor="w")
-                short = serial[:35] + "..." if len(serial) > 35 else serial
-                tk.Label(info_f, text=short, bg=BG2, fg=TEXT2, font=("Segoe UI", 7), anchor="w").pack(anchor="w")
+                short = serial[:38] + "..." if len(serial) > 38 else serial
+                tk.Label(info_f, text=short, bg=BG2, fg=ACCENT, font=("Segoe UI", 8), anchor="w").pack(anchor="w")
                 
-                # Delete button
+                # Disconnect button
                 del_btn = tk.Label(row, text=" ✕ ", bg=RED, fg=BG, font=("Segoe UI", 9, "bold"),
                                   cursor="hand2", padx=4, pady=1)
                 del_btn.pack(side=tk.RIGHT)
@@ -359,29 +461,61 @@ class LauncherApp(tk.Tk):
             
             ttk.Button(actions, text="↻  Re-escanear", style="Ghost.TButton",
                       command=self.scan_devices).pack(side=tk.LEFT, padx=(0, 5))
-            ttk.Button(actions, text="+  Adicionar Dispositivo", style="Blue.TButton",
+            ttk.Button(actions, text="+  Parear Outro", style="Blue.TButton",
                       command=self._show_add_device).pack(side=tk.RIGHT)
+                      
         else:
-            self.dot.config(fg=RED)
-            self.status_text.config(text="Nenhum dispositivo encontrado")
+            self.dot.config(fg=YELLOW if usb_devices else RED)
+            self.status_text.config(text="Nenhum celular Wi-Fi conectado")
             self.device_text.config(text="")
             self.found_device = None
             self.launch_btn.config(state="disabled")
             
-            # Empty state
+            # If USB device is detected, offer 1-click Wi-Fi switch
+            if usb_devices:
+                usb_card = tk.Frame(f, bg=BG2, highlightbackground=YELLOW, highlightthickness=1)
+                usb_card.pack(fill=tk.X, padx=10, pady=8)
+                
+                tk.Label(usb_card, text="📱 Celular detectado via USB:", bg=BG2, fg=YELLOW,
+                         font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+                
+                for s, n in usb_devices:
+                    r = tk.Frame(usb_card, bg=BG2)
+                    r.pack(fill=tk.X, padx=10, pady=(0, 6))
+                    tk.Label(r, text=f"{n} ({s})", bg=BG2, fg=TEXT, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+                    btn = ttk.Button(r, text="Ativar Wi-Fi 📶", style="Blue.TButton",
+                                    command=lambda u_ser=s: self.enable_wifi_from_usb(u_ser))
+                    btn.pack(side=tk.RIGHT)
+            
+            # Empty state info
             empty = tk.Frame(f, bg=BG2, highlightbackground=BORDER, highlightthickness=1)
-            empty.pack(fill=tk.X, padx=10, pady=15)
-            tk.Label(empty, text="📵", bg=BG2, font=("Segoe UI", 28)).pack(pady=(15, 5))
-            tk.Label(empty, text="Nenhum dispositivo", bg=BG2, fg=TEXT, font=("Segoe UI", 11, "bold")).pack()
-            tk.Label(empty, text="Conecte via USB ou adicione via WiFi", bg=BG2, fg=TEXT2,
-                    font=("Segoe UI", 9)).pack(pady=(2, 12))
+            empty.pack(fill=tk.X, padx=10, pady=6)
+            tk.Label(empty, text="📶", bg=BG2, font=("Segoe UI", 26)).pack(pady=(12, 4))
+            tk.Label(empty, text="Conexão Wi-Fi Necessária", bg=BG2, fg=TEXT, font=("Segoe UI", 11, "bold")).pack()
+            tk.Label(empty, text="Ative a Depuração sem Fio no celular\nou conecte via IP abaixo", bg=BG2, fg=TEXT2,
+                    font=("Segoe UI", 8)).pack(pady=(2, 10))
             
             actions = tk.Frame(f, bg=BG)
-            actions.pack(fill=tk.X, padx=10, pady=8)
+            actions.pack(fill=tk.X, padx=10, pady=6)
             ttk.Button(actions, text="↻  Re-escanear", style="Ghost.TButton",
                       command=self.scan_devices).pack(side=tk.LEFT)
-            ttk.Button(actions, text="+  Adicionar Dispositivo", style="Blue.TButton",
+            ttk.Button(actions, text="+  Parear / Conectar IP", style="Blue.TButton",
                       command=self._show_add_device).pack(side=tk.RIGHT)
+    
+    def enable_wifi_from_usb(self, usb_serial):
+        """Ativa o modo TCP/IP no celular via USB e conecta via Wi-Fi."""
+        self.status_text.config(text="Ativando Wi-Fi no dispositivo...")
+        self.dot.config(fg=YELLOW)
+        
+        def _do():
+            ip = get_device_ip(usb_serial)
+            run_adb("-s", usb_serial, "tcpip", "5555")
+            time.sleep(1)
+            if ip:
+                run_adb("connect", f"{ip}:5555")
+                time.sleep(1)
+            self.after(0, self.scan_devices)
+        threading.Thread(target=_do, daemon=True).start()
     
     def _show_add_device(self):
         """Show the add/pair device UI."""
@@ -396,9 +530,9 @@ class LauncherApp(tk.Tk):
         card1 = tk.Frame(f, bg=BG2, highlightbackground=BORDER, highlightthickness=1)
         card1.pack(fill=tk.X, padx=10, pady=5)
         
-        tk.Label(card1, text="Conectar via IP", bg=BG2, fg=TEXT,
+        tk.Label(card1, text="Conectar via IP (Wi-Fi)", bg=BG2, fg=TEXT,
                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
-        tk.Label(card1, text="Para dispositivos já pareados", bg=BG2, fg=TEXT2,
+        tk.Label(card1, text="Para celulares na mesma rede Wi-Fi", bg=BG2, fg=TEXT2,
                 font=("Segoe UI", 8)).pack(anchor="w", padx=12)
         
         r1 = tk.Frame(card1, bg=BG2)
@@ -413,10 +547,10 @@ class LauncherApp(tk.Tk):
         card2 = tk.Frame(f, bg=BG2, highlightbackground=BORDER, highlightthickness=1)
         card2.pack(fill=tk.X, padx=10, pady=5)
         
-        tk.Label(card2, text="Parear Novo Dispositivo", bg=BG2, fg=TEXT,
+        tk.Label(card2, text="Parear Depuração sem Fio", bg=BG2, fg=TEXT,
                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
-        tk.Label(card2, text="Celular → Config → Dev Options → Wireless Debug → Pair",
-                bg=BG2, fg=TEXT2, font=("Segoe UI", 7)).pack(anchor="w", padx=12)
+        tk.Label(card2, text="Celular → Configurações → Opções do Desenvolvedor\n→ Depuração sem Fio → Parear com Código",
+                bg=BG2, fg=TEXT2, font=("Segoe UI", 7), justify=tk.LEFT).pack(anchor="w", padx=12)
         
         pg = tk.Frame(card2, bg=BG2)
         pg.pack(fill=tk.X, padx=12, pady=5)
@@ -431,11 +565,11 @@ class LauncherApp(tk.Tk):
                                  font=("Segoe UI", 9), width=20, relief="flat", bd=4)
         self.pair_code.grid(row=1, column=1, pady=2, padx=3)
         
-        ttk.Button(card2, text="Parear", style="Blue.TButton",
+        ttk.Button(card2, text="Parear Dispositivo", style="Blue.TButton",
                   command=self.pair_device).pack(fill=tk.X, padx=12, pady=(3, 8))
     
     def disconnect_device(self, serial):
-        """Disconnect a device via ADB."""
+        """Disconnect a Wi-Fi device via ADB."""
         self.status_text.config(text="Desconectando...")
         self.dot.config(fg=YELLOW)
         def _do():
@@ -446,7 +580,7 @@ class LauncherApp(tk.Tk):
     
     def connect_ip(self):
         ip = self.ip_entry.get().strip()
-        if not ip: return
+        if not ip or "X" in ip: return
         self.status_text.config(text=f"Conectando a {ip}...")
         self.dot.config(fg=YELLOW)
         def _do():
@@ -469,7 +603,7 @@ class LauncherApp(tk.Tk):
                 time.sleep(1)
                 run_adb("connect", f"{base}:5555")
                 time.sleep(1)
-            self.after(0, lambda: self.scan_devices() if ok else self.status_text.config(text=f"Falha ao parear"))
+            self.after(0, lambda: self.scan_devices() if ok else self.status_text.config(text="Falha ao parear"))
         threading.Thread(target=_do, daemon=True).start()
     
     # ──────── Launch ────────
@@ -479,25 +613,30 @@ class LauncherApp(tk.Tk):
         self.launch_btn.config(state="disabled")
         self.update()
         
-        cmd = [SCRCPY_PATH]
+        scrcpy_exe = find_scrcpy()
+        cmd = [scrcpy_exe]
+        
+        # Alvo específico do dispositivo Wi-Fi conectado
+        if self.found_device:
+            cmd += ["-s", self.found_device]
+            
         c = self.cfg
         if c.get("max_size"): cmd += ["-m", str(c["max_size"])]
         if c.get("max_fps"): cmd += ["--max-fps", str(c["max_fps"])]
         if c.get("video_bit_rate"): cmd += ["-b", str(c["video_bit_rate"])]
         
         codec = c.get("video_codec", "h265")
-        if codec != "h264": # h264 is default in original scrcpy, but we prefer h265
+        if codec != "h264":
             cmd += ["--video-codec", codec]
             
         # EXTREME LOW LATENCY OPTIONS (Snapdragon Gen 2 optimized)
-        # Force low-delay hardware encoder profile (baseline/main equivalent)
         if codec in ["h264", "h265"]:
             cmd += ["--video-codec-options", "profile=1,level=4096"]
             
         vb = c.get("video_buffer", "0")
         if vb != "0": cmd += ["--video-buffer", str(vb)]
         
-        # Optimize audio buffer to 10ms instead of default 50ms for low latency
+        # Audio buffer 10ms default
         if not c.get("audio", True): 
             cmd += ["--no-audio"]
         else:
@@ -511,12 +650,21 @@ class LauncherApp(tk.Tk):
             cmd += ["--turn-screen-off", "--stay-awake"]
         cmd += ["-K"]
         
-        # Print command for debugging
         print("Executando:", " ".join(cmd))
         
         try:
-            subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW,
-                           cwd=os.path.dirname(SCRCPY_PATH))
+            scrcpy_dir = os.path.dirname(scrcpy_exe) if os.path.isabs(scrcpy_exe) else os.path.dirname(os.path.abspath(__file__))
+            env = os.environ.copy()
+            adb_dir = os.path.dirname(find_adb())
+            if adb_dir:
+                env["PATH"] = adb_dir + os.pathsep + env.get("PATH", "")
+                
+            subprocess.Popen(
+                cmd,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                cwd=scrcpy_dir,
+                env=env
+            )
         except Exception as e:
             messagebox.showerror("Erro", f"Scrcpy falhou:\n{e}")
             self.launch_btn.config(state="normal")
