@@ -30,7 +30,7 @@ PURPLE    = "#bc8cff"
 
 DEFAULT_CONFIG = {
     "max_size": "1080", "max_fps": "144", "video_bit_rate": "8M",
-    "video_codec": "h264", "audio": True, "video_buffer": "50",
+    "video_codec": "h265", "audio": True, "video_buffer": "0",
     "keep_awake": True, "show_touches": False, "fullscreen": False,
     "borderless": False, "always_on_top": False, "turn_screen_off": False,
     "power_off_close": False,
