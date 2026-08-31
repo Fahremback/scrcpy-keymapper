@@ -297,7 +297,7 @@ class ScrcpySidebar(tk.Tk):
     def add_mapping(self):
         self.mappings = self._read_file() # fetch latest from C
         t = self.add_type.get()
-        m = {"type": t, "key": "unknown", "x": 0.5, "y": 0.5, "radius": 0.08, "sensitivity": 1.0, "macro_steps": ""}
+        m = {"type": t, "key": "space", "x": 0.5, "y": 0.5, "radius": 0.08, "sensitivity": 1.0, "macro_steps": ""}
         if t == "MOUSE":
             m["key"] = "left"
         elif t == "AIM":

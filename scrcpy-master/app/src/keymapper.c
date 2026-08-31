@@ -323,29 +323,14 @@ km_set_window(SDL_Window *window) {
 }
 
 void
-km_init(void) {
-    if (state.loaded)
-        return;
-    state.loaded = true;
-    state.count = 0;
-    state.edit_mode = false;
-    state.fps_mode = false;
-    state.show_overlay = true;
-    state.opacity = 0.6f;
-    state.dragging = -1;
-    state.selected = -1;
-    state.window = NULL;
-
-    SDL_AddTimer(100, km_ipc_timer_cb, NULL);
-
+km_load_config(void) {
     FILE *f = fopen("keymap.cfg", "r");
     if (!f) {
         LOGW("Keymapper: keymap.cfg not found");
         return;
     }
 
-    LOGI("Keymapper: loaded config from keymap.cfg");
-
+    state.count = 0;
     char line[512], name_str[32], type_str[16];
     int pid = 1;
     float xp, yp;
@@ -366,14 +351,11 @@ km_init(void) {
         if (!strcmp(type_str, "KEY")) {
             b->type = KM_TYPE_KEY;
             b->keycode = km_name_to_keycode(name_str);
-            if (b->keycode == SDLK_UNKNOWN)
-                continue;
             state.count++;
         } else if (!strcmp(type_str, "MOUSE")) {
             b->type = KM_TYPE_MOUSE;
             b->mouse_button = km_name_to_mouse(name_str);
-            if (b->mouse_button == 0)
-                continue;
+            state.count++;
         } else if (!strcmp(type_str, "AIM")) {
             b->type = KM_TYPE_AIM;
             b->keycode = km_name_to_keycode(name_str);
@@ -429,7 +411,31 @@ km_init(void) {
         }
     }
     fclose(f);
-    LOGI("Keymapper: %d bindings loaded", state.count);
+    LOGI("Keymapper: loaded %d bindings from keymap.cfg", state.count);
+}
+
+void
+km_init(void) {
+    if (!state.loaded) {
+        state.loaded = true;
+        state.count = 0;
+        state.edit_mode = false;
+        state.fps_mode = false;
+        state.show_overlay = true;
+        state.opacity = 0.6f;
+        state.dragging = -1;
+        state.selected = -1;
+        state.window = NULL;
+
+        SDL_AddTimer(100, km_ipc_timer_cb, NULL);
+    }
+
+    km_load_config();
+}
+
+void
+km_reload_config(void) {
+    km_load_config();
 }
 
 void
@@ -500,12 +506,6 @@ km_save_config(void) {
     }
     fclose(f);
     LOGI("Keymapper: config saved (%d bindings)", state.count);
-}
-
-void
-km_reload_config(void) {
-    state.loaded = false;
-    km_init();
 }
 
 // =====================================================
