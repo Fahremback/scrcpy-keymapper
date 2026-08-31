@@ -259,6 +259,8 @@ class ScrcpySidebar(tk.Tk):
                     }
                     if m["type"] == "DPAD" and len(parts) >= 5:
                         m["radius"] = float(parts[4])
+                    elif m["type"] == "AIM" and len(parts) >= 5:
+                        m["sensitivity"] = float(parts[4])
                     elif m["type"] == "MACRO" and len(parts) >= 5:
                         m["macro_steps"] = " ".join(parts[4:])
                     result.append(m)
@@ -276,6 +278,8 @@ class ScrcpySidebar(tk.Tk):
             y = m["y"]
             if t == "DPAD":
                 lines.append(f"{t} {k} {x:.3f} {y:.3f} {m.get('radius', 0.08):.3f}\n")
+            elif t == "AIM":
+                lines.append(f"{t} {k} {x:.3f} {y:.3f} {m.get('sensitivity', 1.0):.2f}\n")
             elif t == "MACRO":
                 steps = m.get("macro_steps", "")
                 lines.append(f"{t} {k} {x:.3f} {y:.3f} {steps}\n")
@@ -293,7 +297,7 @@ class ScrcpySidebar(tk.Tk):
     def add_mapping(self):
         self.mappings = self._read_file() # fetch latest from C
         t = self.add_type.get()
-        m = {"type": t, "key": "unknown", "x": 0.5, "y": 0.5, "radius": 0.08, "macro_steps": ""}
+        m = {"type": t, "key": "unknown", "x": 0.5, "y": 0.5, "radius": 0.08, "sensitivity": 1.0, "macro_steps": ""}
         if t == "MOUSE":
             m["key"] = "left"
         elif t == "AIM":
@@ -360,7 +364,7 @@ class ScrcpySidebar(tk.Tk):
             elif t == "MOUSE":
                 self._render_mouse_control(ctrl, i, m)
             elif t == "AIM":
-                self._render_aim_control(ctrl, m)
+                self._render_aim_control(ctrl, i, m)
             elif t == "DPAD":
                 self._render_dpad_control(ctrl, m)
             elif t == "SCROLL":
@@ -401,10 +405,31 @@ class ScrcpySidebar(tk.Tk):
         self.save_and_reload()
         self.render_list()
     
-    def _render_aim_control(self, parent, m):
-        """AIM: Just shows info — position is set in edit mode."""
-        tk.Label(parent, text="🎯 Âncora da mira — posicione no modo edição",
-                bg=BG2, fg=TEXT2, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+    def _render_aim_control(self, parent, idx, m):
+        """AIM: Shows info + sensitivity adjustment."""
+        left = tk.Frame(parent, bg=BG2)
+        left.pack(side=tk.LEFT)
+        tk.Label(left, text="🎯 Mira (Mouse)", bg=BG2, fg=TEXT2, font=("Segoe UI", 8)).pack(anchor="w")
+        
+        # Sensitivity control
+        sens_f = tk.Frame(parent, bg=BG2)
+        sens_f.pack(side=tk.RIGHT)
+        tk.Label(sens_f, text="Sens:", bg=BG2, fg=TEXT2, font=("Segoe UI", 7)).pack(side=tk.LEFT)
+        
+        sv = tk.StringVar(value=f"{m.get('sensitivity', 1.0):.2f}")
+        se = tk.Entry(sens_f, textvariable=sv, width=5, bg=BG3, fg=TEXT, insertbackground=TEXT,
+                     font=("Segoe UI", 8), relief="flat", bd=3)
+        se.pack(side=tk.LEFT, padx=2)
+        
+        def _update_sens(*a):
+            try:
+                val = float(sv.get())
+                self.mappings = self._read_file()
+                if 0 <= idx < len(self.mappings):
+                    self.mappings[idx]["sensitivity"] = val
+                    self.save_and_reload()
+            except: pass
+        sv.trace_add("write", _update_sens)
     
     def _render_dpad_control(self, parent, m):
         """DPAD: Shows WASD info + radius slider."""

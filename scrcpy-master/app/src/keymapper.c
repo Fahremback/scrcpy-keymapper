@@ -374,10 +374,15 @@ km_init(void) {
             b->mouse_button = km_name_to_mouse(name_str);
             if (b->mouse_button == 0)
                 continue;
-            state.count++;
         } else if (!strcmp(type_str, "AIM")) {
             b->type = KM_TYPE_AIM;
             b->keycode = km_name_to_keycode(name_str);
+            float sens = 1.0f;
+            if (sscanf(line, "%*s %*s %*f %*f %f", &sens) == 1) {
+                b->sensitivity = sens;
+            } else {
+                b->sensitivity = 1.0f;
+            }
             state.count++;
         } else if (!strcmp(type_str, "DPAD")) {
             b->type = KM_TYPE_DPAD;
@@ -471,7 +476,8 @@ km_save_config(void) {
                 break;
             }
             case KM_TYPE_AIM:
-                fprintf(f, "AIM aim %.3f %.3f\n", b->x_pct, b->y_pct);
+                fprintf(f, "AIM aim %.3f %.3f %.2f\n", b->x_pct, b->y_pct,
+                        b->sensitivity > 0.01f ? b->sensitivity : 1.0f);
                 break;
             case KM_TYPE_DPAD:
                 fprintf(f, "DPAD wasd %.3f %.3f %.3f\n", b->x_pct, b->y_pct, b->dpad_radius);

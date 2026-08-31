@@ -36,6 +36,8 @@ struct km_binding {
     int pointer_id;
     // DPAD fields
     float dpad_radius; // radius as fraction of screen (e.g. 0.08)
+    // AIM fields
+    float sensitivity; // multiplier (e.g. 1.0)
     // MACRO fields
     struct km_macro_step macro_steps[KM_MAX_MACRO_STEPS];
     int macro_step_count;

@@ -847,7 +847,8 @@ sc_input_manager_process_mouse_motion(struct sc_input_manager *im,
             struct sc_size fs = im->screen->frame_size;
 
             // Sensitivity: convert mouse pixels to screen fraction
-            float sensitivity = 0.0015f;
+            float user_sens = (aim->sensitivity > 0.01f) ? aim->sensitivity : 1.0f;
+            float sensitivity = 0.0015f * user_sens;
             float dx = event->xrel * sensitivity;
             float dy = event->yrel * sensitivity;
 
