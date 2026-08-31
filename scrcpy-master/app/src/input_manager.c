@@ -467,6 +467,27 @@ sc_input_manager_process_key(struct sc_input_manager *im,
         return;
     }
     if (down && !repeat && sdl_keycode == SDLK_F10) {
+        struct km_state *kms_f = km_get_state();
+        if (kms_f->fps_mode && kms_f->aim_finger_down && im->controller) {
+            struct sc_size fs = im->screen->frame_size;
+            struct sc_point up_pt = {
+                .x = (int32_t) (fs.width * kms_f->aim_curr_x),
+                .y = (int32_t) (fs.height * kms_f->aim_curr_y),
+            };
+            struct sc_control_msg up_msg = {
+                .type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT,
+                .inject_touch_event = {
+                    .action = AMOTION_EVENT_ACTION_UP,
+                    .pointer_id = SC_POINTER_ID_AIM_FINGER,
+                    .position = { .screen_size = fs, .point = up_pt },
+                    .pressure = 0.0f,
+                    .action_button = 0,
+                    .buttons = 0,
+                },
+            };
+            sc_controller_push_msg(im->controller, &up_msg);
+            kms_f->aim_finger_down = false;
+        }
         km_toggle_fps(im->screen->window);
         return;
     }
@@ -819,56 +840,113 @@ sc_input_manager_process_mouse_motion(struct sc_input_manager *im,
         return;
     }
 
-    // KEYMAPPER FPS AIM: convert relative mouse motion to touch swipes
+    // KEYMAPPER FPS AIM: convert relative mouse motion to seamless touch swipes
     if (kms_m->fps_mode && im->controller) {
         struct km_binding *aim = km_find_aim();
         if (aim) {
             struct sc_size fs = im->screen->frame_size;
 
-            // Sensitivity: convert mouse pixels to fraction of screen
-            float sensitivity = 0.002f;
+            // Sensitivity: convert mouse pixels to screen fraction
+            float sensitivity = 0.0015f;
             float dx = event->xrel * sensitivity;
             float dy = event->yrel * sensitivity;
 
-            // Calculate touch point around aim anchor
-            float tx = aim->x_pct + dx;
-            float ty = aim->y_pct + dy;
-
-            // Clamp
-            if (tx < 0.02f)
-                tx = 0.02f;
-            if (tx > 0.98f)
-                tx = 0.98f;
-            if (ty < 0.02f)
-                ty = 0.02f;
-            if (ty > 0.98f)
-                ty = 0.98f;
-
-            struct sc_point touch_pt;
-            touch_pt.x = (int32_t) (fs.width * tx);
-            touch_pt.y = (int32_t) (fs.height * ty);
-
-            struct sc_control_msg msg;
-            msg.type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT;
-            msg.inject_touch_event.position.screen_size = fs;
-            msg.inject_touch_event.position.point = touch_pt;
-            msg.inject_touch_event.pointer_id = SC_POINTER_ID_AIM_FINGER;
-            msg.inject_touch_event.action_button = 0;
-            msg.inject_touch_event.buttons = 0;
-
+            // If finger is not yet down, place finger down at anchor point
             if (!kms_m->aim_finger_down) {
-                // First motion: put finger down
-                msg.inject_touch_event.action = AMOTION_EVENT_ACTION_DOWN;
-                msg.inject_touch_event.pressure = 1.0f;
-                sc_controller_push_msg(im->controller, &msg);
+                kms_m->aim_curr_x = aim->x_pct;
+                kms_m->aim_curr_y = aim->y_pct;
+
+                struct sc_point pt = {
+                    .x = (int32_t) (fs.width * kms_m->aim_curr_x),
+                    .y = (int32_t) (fs.height * kms_m->aim_curr_y),
+                };
+
+                struct sc_control_msg down_msg = {
+                    .type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT,
+                    .inject_touch_event = {
+                        .action = AMOTION_EVENT_ACTION_DOWN,
+                        .pointer_id = SC_POINTER_ID_AIM_FINGER,
+                        .position = { .screen_size = fs, .point = pt },
+                        .pressure = 1.0f,
+                        .action_button = 0,
+                        .buttons = 0,
+                    },
+                };
+                sc_controller_push_msg(im->controller, &down_msg);
                 kms_m->aim_finger_down = true;
             }
 
-            // Send move
-            msg.inject_touch_event.action = AMOTION_EVENT_ACTION_MOVE;
-            msg.inject_touch_event.pressure = 1.0f;
-            msg.inject_touch_event.position.point = touch_pt;
-            sc_controller_push_msg(im->controller, &msg);
+            // Calculate next position
+            float next_x = kms_m->aim_curr_x + dx;
+            float next_y = kms_m->aim_curr_y + dy;
+
+            // Radius threshold for re-centering (e.g. 0.15 of screen or edges)
+            float dist_x = next_x - aim->x_pct;
+            float dist_y = next_y - aim->y_pct;
+            float dist_sq = (dist_x * dist_x) + (dist_y * dist_y);
+            float max_radius = 0.12f;
+
+            bool reached_limit = (dist_sq > (max_radius * max_radius))
+                              || (next_x < 0.05f) || (next_x > 0.95f)
+                              || (next_y < 0.05f) || (next_y > 0.95f);
+
+            // 1. Move to next position to register camera delta
+            struct sc_point move_pt = {
+                .x = (int32_t) (fs.width * next_x),
+                .y = (int32_t) (fs.height * next_y),
+            };
+            struct sc_control_msg move_msg = {
+                .type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT,
+                .inject_touch_event = {
+                    .action = AMOTION_EVENT_ACTION_MOVE,
+                    .pointer_id = SC_POINTER_ID_AIM_FINGER,
+                    .position = { .screen_size = fs, .point = move_pt },
+                    .pressure = 1.0f,
+                    .action_button = 0,
+                    .buttons = 0,
+                },
+            };
+            sc_controller_push_msg(im->controller, &move_msg);
+
+            if (reached_limit) {
+                // 2. Lift finger without dragging backwards (UP event)
+                struct sc_control_msg up_msg = {
+                    .type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT,
+                    .inject_touch_event = {
+                        .action = AMOTION_EVENT_ACTION_UP,
+                        .pointer_id = SC_POINTER_ID_AIM_FINGER,
+                        .position = { .screen_size = fs, .point = move_pt },
+                        .pressure = 0.0f,
+                        .action_button = 0,
+                        .buttons = 0,
+                    },
+                };
+                sc_controller_push_msg(im->controller, &up_msg);
+
+                // 3. Place finger back at center anchor (DOWN event)
+                struct sc_point center_pt = {
+                    .x = (int32_t) (fs.width * aim->x_pct),
+                    .y = (int32_t) (fs.height * aim->y_pct),
+                };
+                struct sc_control_msg center_down_msg = {
+                    .type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT,
+                    .inject_touch_event = {
+                        .action = AMOTION_EVENT_ACTION_DOWN,
+                        .pointer_id = SC_POINTER_ID_AIM_FINGER,
+                        .position = { .screen_size = fs, .point = center_pt },
+                        .pressure = 1.0f,
+                        .action_button = 0,
+                        .buttons = 0,
+                    },
+                };
+                sc_controller_push_msg(im->controller, &center_down_msg);
+
+                kms_m->aim_curr_x = aim->x_pct;
+                kms_m->aim_curr_y = aim->y_pct;
+            } else {
+                kms_m->aim_curr_x = next_x;
+                kms_m->aim_curr_y = next_y;
+            }
 
             return;
         }
@@ -983,9 +1061,9 @@ sc_input_manager_process_mouse_button(struct sc_input_manager *im,
     bool paused = im->screen->paused;
     bool down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
 
-    // KEYMAPPER: mapped mouse buttons -> touch events
+    // KEYMAPPER: mapped mouse buttons -> touch events (ONLY in FPS mode)
     struct km_binding *mb = km_find_mouse_binding(event->button);
-    if (mb && im->controller && !kms->edit_mode) {
+    if (mb && im->controller && !kms->edit_mode && kms->fps_mode) {
         struct sc_point touch_pt;
         touch_pt.x = (int32_t) (im->screen->frame_size.width * mb->x_pct);
         touch_pt.y = (int32_t) (im->screen->frame_size.height * mb->y_pct);

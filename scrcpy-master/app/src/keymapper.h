@@ -49,6 +49,8 @@ struct km_state {
     bool show_overlay;
     bool fps_mode;
     bool aim_finger_down; // whether the aim touch is currently pressed
+    float aim_curr_x;     // current aim swipe X position (0.0 - 1.0)
+    float aim_curr_y;     // current aim swipe Y position (0.0 - 1.0)
     float opacity;        // 0.0 - 1.0
     int dragging;         // index of binding being dragged, -1 = none
     int selected;         // index of selected binding, -1 = none
